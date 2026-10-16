@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>ABANDONED: HOSPITAL 13</title>
+    <meta name="description" content="A chilling 3D first-person horror exploration game set in the decaying corridors of Ward 13 with flickering lights, procedural ambient audio, mobile touch joystick, and flashlight." />
+    <meta property="og:title" content="ABANDONED: HOSPITAL 13" />
+    <meta property="og:description" content="A chilling 3D first-person horror exploration game set in the decaying corridors of Ward 13 with flickering lights, procedural ambient audio, mobile touch joystick, and flashlight." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#030708" />
+    <style>
+      /* Prevent elastic pull-to-refresh and selection on mobile touch */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+        background-color: #030708;
+      }
+    </style>
+  </head>
+  <body class="bg-black text-white antialiased overflow-hidden select-none">
+    <div id="root" class="w-full h-full overflow-hidden"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
