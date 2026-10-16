@@ -1,0 +1,6 @@
+{
+  "name": "ABANDONED: HOSPITAL 13",
+  "description": "A chilling 3D first-person horror exploration game set in the decaying corridors of Ward 13 with flickering lights, procedural ambient audio, mobile touch joystick, and flashlight.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
