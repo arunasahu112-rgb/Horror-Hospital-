@@ -83,9 +83,17 @@ export class HospitalGame {
 
     // 3. Renderer setup
     const isHeadless = navigator.webdriver || /HeadlessChrome/i.test(navigator.userAgent);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+this.renderer = new THREE.WebGLRenderer({
+  antialias: !isMobile,
+  powerPreference: 'high-performance',
+  stencil: false
+});
     this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.setPixelRatio(isHeadless ? 1 : Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(
+  isHeadless ? 1 : Math.min(window.devicePixelRatio, 1.25)
+);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
@@ -482,7 +490,7 @@ export class HospitalGame {
 
     let foundInteractable: THREE.Object3D | null = null;
     let prompt: string | null = null;
-
+private lastInteractPrompt: string | null = null;
     if (intersects.length > 0) {
       const hit = intersects[0];
       if (hit.distance < 3.2) {
@@ -508,7 +516,11 @@ export class HospitalGame {
     }
 
     this.currentInteractable = foundInteractable;
-    this.callbacks.onInteractPrompt(prompt);
+
+if (prompt !== this.lastInteractPrompt) {
+  this.lastInteractPrompt = prompt;
+  this.callbacks.onInteractPrompt(prompt);
+}
   }
 
   private updateSanityAndBattery(dt: number) {
