@@ -24,49 +24,69 @@ export class HospitalGame {
   private container: HTMLElement;
   private callbacks: GameStateCallbacks;
 
-  // Three.js core
+  // THREE.JS
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
   private mapData!: HospitalMapData;
 
-  // Flashlight
+  // FLASHLIGHT
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private isFlashlightOn = true;
   private batteryLevel = 100;
+
   private flashlightLagPos = new THREE.Vector3();
   private flashlightLagDir = new THREE.Vector3();
 
-  // Player
+  // PLAYER
   private playerPos = new THREE.Vector3();
   private playerVel = new THREE.Vector3();
+
   private cameraPitch = 0;
   private cameraYaw = Math.PI;
+
   private isSprinting = false;
   private bobTimer = 0;
   private lastStepCycle = 0;
   private playerRadius = 0.38;
 
-  // Input
+  // INPUT
   private keys: Record<string, boolean> = {};
-  private joystickVec = { x: 0, y: 0 };
+
+  private joystickVec = {
+    x: 0,
+    y: 0,
+  };
+
   private isPointerLocked = false;
 
-  // Objectives
+  // OBJECTIVES
   private collectedRecords = new Set<string>();
   private totalRecords = 4;
+
   private isGameActive = false;
   private isVictory = false;
   private isGameOver = false;
 
-  // Interaction
+  // INTERACTION
   private raycaster = new THREE.Raycaster();
+
   private currentInteractable: THREE.Object3D | null = null;
   private lastInteractPrompt: string | null = null;
 
-  // Monster AI
+  // MONSTER
   private monster!: THREE.Group;
+
+  private monsterBody!: THREE.Mesh;
+  private monsterHead!: THREE.Mesh;
+
+  private monsterLeftArm!: THREE.Mesh;
+  private monsterRightArm!: THREE.Mesh;
+
+  private monsterLeftLeg!: THREE.Mesh;
+  private monsterRightLeg!: THREE.Mesh;
+
   private monsterState: MonsterState = 'patrol';
 
   private monsterWaypoints: THREE.Vector3[] = [
@@ -78,29 +98,53 @@ export class HospitalGame {
   ];
 
   private monsterWaypointIndex = 0;
+
   private monsterInvestigateTimer = 0;
   private monsterInvestigateTarget = new THREE.Vector3();
 
-  private monsterMoveSpeed = 1.15;
-  private monsterChaseSpeed = 2.6;
+  private monsterMoveSpeed = 1.35;
+  private monsterChaseSpeed = 3.4;
+
   private monsterDetectionRange = 13;
   private monsterHearingRange = 11;
 
   private monsterRaycaster = new THREE.Raycaster();
+
   private monsterForward = new THREE.Vector3();
   private monsterToPlayer = new THREE.Vector3();
   private monsterTargetPosition = new THREE.Vector3();
+
   private monsterCollisionSphere = new THREE.Sphere();
 
-  // Clock
+  // MONSTER ANIMATION
+  private monsterAnimationTime = 0;
+  private monsterStepTimer = 0;
+  private monsterBreathingTimer = 0;
+  private monsterGrowlTimer = 0;
+
+  private monsterPreviousPosition = new THREE.Vector3();
+  private monsterIsMoving = false;
+
+  private previousMonsterState: MonsterState = 'patrol';
+
+  // SANITY / TENSION
+  private panicLevel = 0.2;
+  private sanityLevel = 100;
+
+  // CLOCK
   private clock = new THREE.Clock();
   private animFrameId: number | null = null;
 
-  // Reusable vectors
+  // REUSABLE VECTORS
   private _forward = new THREE.Vector3();
   private _right = new THREE.Vector3();
   private _moveDir = new THREE.Vector3();
+
   private _playerSphere = new THREE.Sphere();
+
+  // =====================================================
+  // CONSTRUCTOR
+  // =====================================================
 
   constructor(
     container: HTMLElement,
@@ -109,29 +153,34 @@ export class HospitalGame {
     this.container = container;
     this.callbacks = callbacks;
 
-    // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x040806);
-    this.scene.fog = new THREE.FogExp2(0x040806, 0.08);
 
-    // Camera
+    this.scene.background = new THREE.Color(0x040605);
+
+    this.scene.fog = new THREE.FogExp2(
+      0x040605,
+      0.075
+    );
+
     const aspect =
-      container.clientWidth / Math.max(1, container.clientHeight);
+      container.clientWidth /
+      Math.max(1, container.clientHeight);
 
     this.camera = new THREE.PerspectiveCamera(
       72,
       aspect,
       0.1,
-      50
+      60
     );
 
-    // Mobile-friendly renderer
+    const isMobile =
+      /Android|iPhone|iPad|iPod/i.test(
+        navigator.userAgent
+      );
+
     const isHeadless =
       navigator.webdriver ||
       /HeadlessChrome/i.test(navigator.userAgent);
-
-    const isMobile =
-      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: !isMobile,
@@ -145,17 +194,25 @@ export class HospitalGame {
     );
 
     this.renderer.setPixelRatio(
-      isHeadless ? 1 : Math.min(window.devicePixelRatio, 1.25)
+      isHeadless
+        ? 1
+        : Math.min(window.devicePixelRatio, 1.25)
     );
 
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+
+    this.renderer.toneMapping =
+      THREE.ACESFilmicToneMapping;
+
+    this.renderer.toneMappingExposure = 1.05;
 
     container.appendChild(this.renderer.domElement);
 
-    // Environment
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    // ENVIRONMENT
+    const pmrem = new THREE.PMREMGenerator(
+      this.renderer
+    );
+
     const environment = new RoomEnvironment();
 
     this.scene.environment = pmrem.fromScene(
@@ -165,25 +222,30 @@ export class HospitalGame {
 
     pmrem.dispose();
 
-    // Ambient lighting
+    // DARK AMBIENT LIGHT
     this.scene.add(
       new THREE.HemisphereLight(
-        0x192822,
-        0x070c0a,
-        0.4
+        0x17221b,
+        0x050706,
+        0.35
       )
     );
 
-    // Build map
+    // MAP
     const mapBuilder = new HospitalMapBuilder();
+
     this.mapData = mapBuilder.build();
+
     this.scene.add(this.mapData.rootGroup);
 
-    // Starting position
-    this.playerPos.copy(this.mapData.startPosition);
+    // PLAYER START
+    this.playerPos.copy(
+      this.mapData.startPosition
+    );
+
     this.camera.position.copy(this.playerPos);
 
-    // Systems
+    // SETUP SYSTEMS
     this.setupFlashlight();
     this.setupMonster();
     this.setupEventListeners();
@@ -191,16 +253,17 @@ export class HospitalGame {
     this.onWindowResize();
 
     this.clock.start();
+
     this.tick();
   }
 
-  // ==========================================
+  // =====================================================
   // FLASHLIGHT
-  // ==========================================
+  // =====================================================
 
   private setupFlashlight() {
     this.flashlight = new THREE.SpotLight(
-      0xfffae2,
+      0xfff5d8,
       4.5,
       22,
       Math.PI / 6.5,
@@ -212,23 +275,33 @@ export class HospitalGame {
 
     this.scene.add(this.flashlightTarget);
 
-    this.flashlight.target = this.flashlightTarget;
+    this.flashlight.target =
+      this.flashlightTarget;
+
     this.scene.add(this.flashlight);
 
     this.flashlightLagPos.copy(this.playerPos);
+
     this.flashlightLagDir.set(0, 0, -1);
   }
 
   public toggleFlashlight() {
-    if (this.batteryLevel <= 0) return;
+    if (
+      this.batteryLevel <= 0 ||
+      this.isVictory ||
+      this.isGameOver
+    ) {
+      return;
+    }
 
     this.isFlashlightOn = !this.isFlashlightOn;
 
-    this.flashlight.intensity = this.isFlashlightOn
-      ? 4.5
-      : 0;
+    this.flashlight.intensity =
+      this.isFlashlightOn ? 4.5 : 0;
 
-    horrorAudio.playFlashlightClick(this.isFlashlightOn);
+    horrorAudio.playFlashlightClick(
+      this.isFlashlightOn
+    );
   }
 
   private updateFlashlight(dt: number) {
@@ -237,7 +310,9 @@ export class HospitalGame {
       Math.min(1, dt * 18)
     );
 
-    this.flashlight.position.copy(this.flashlightLagPos);
+    this.flashlight.position.copy(
+      this.flashlightLagPos
+    );
 
     this._right
       .set(
@@ -254,7 +329,9 @@ export class HospitalGame {
 
     this.flashlight.position.y -= 0.12;
 
-    this.camera.getWorldDirection(this._forward);
+    this.camera.getWorldDirection(
+      this._forward
+    );
 
     this.flashlightLagDir.lerp(
       this._forward,
@@ -263,11 +340,21 @@ export class HospitalGame {
 
     this.flashlightTarget.position
       .copy(this.flashlight.position)
-      .addScaledVector(this.flashlightLagDir, 10);
+      .addScaledVector(
+        this.flashlightLagDir,
+        10
+      );
 
-    if (this.isFlashlightOn && this.batteryLevel > 0) {
-      if (this.batteryLevel < 25 && Math.random() < 0.08) {
-        this.flashlight.intensity = Math.random() * 2;
+    if (
+      this.isFlashlightOn &&
+      this.batteryLevel > 0
+    ) {
+      if (
+        this.batteryLevel < 25 &&
+        Math.random() < 0.07
+      ) {
+        this.flashlight.intensity =
+          Math.random() * 2.2;
       } else {
         this.flashlight.intensity = 4.5;
       }
@@ -276,88 +363,244 @@ export class HospitalGame {
     }
   }
 
-  // ==========================================
+  // =====================================================
   // MONSTER CREATION
-  // ==========================================
+  // =====================================================
 
   private setupMonster() {
     this.monster = new THREE.Group();
+
     this.monster.name = 'HospitalMonster';
 
+    // DARK SKIN
     const skin = new THREE.MeshStandardMaterial({
-      color: 0x171717,
-      roughness: 0.95,
+      color: 0x101211,
+      roughness: 1,
+      metalness: 0,
     });
 
+    const headMaterial =
+      new THREE.MeshStandardMaterial({
+        color: 0x090b0a,
+        roughness: 0.95,
+      });
+
+    // RED GLOWING EYES
     const eyes = new THREE.MeshStandardMaterial({
-      color: 0xff1111,
-      emissive: 0x660000,
-      emissiveIntensity: 1.5,
+      color: 0xff0808,
+      emissive: 0xff0000,
+      emissiveIntensity: 3,
     });
 
-    // Body
-    const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.28, 0.4, 1.2, 8),
+    // BODY
+    this.monsterBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.28,
+        0.39,
+        1.25,
+        8
+      ),
       skin
     );
 
-    body.position.y = 1.05;
-    this.monster.add(body);
+    this.monsterBody.position.y = 1.05;
 
-    // Head
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.34, 8, 8),
-      skin
+    this.monster.add(this.monsterBody);
+
+    // HEAD
+    this.monsterHead = new THREE.Mesh(
+      new THREE.SphereGeometry(
+        0.34,
+        10,
+        8
+      ),
+      headMaterial
     );
 
-    head.position.set(0, 1.85, 0);
-    this.monster.add(head);
+    this.monsterHead.position.set(
+      0,
+      1.85,
+      -0.02
+    );
 
-    // Glowing eyes face the monster's forward (-Z) direction
+    this.monster.add(this.monsterHead);
+
+    // JAW
+    const jaw = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        0.22,
+        0.16,
+        0.18
+      ),
+      new THREE.MeshStandardMaterial({
+        color: 0x050505,
+        roughness: 1,
+      })
+    );
+
+    jaw.position.set(
+      0,
+      1.66,
+      -0.25
+    );
+
+    this.monster.add(jaw);
+
+    // EYES
     for (const x of [-0.13, 0.13]) {
       const eye = new THREE.Mesh(
-        new THREE.SphereGeometry(0.055, 6, 6),
+        new THREE.SphereGeometry(
+          0.055,
+          8,
+          8
+        ),
         eyes
       );
 
-      eye.position.set(x, 1.9, -0.29);
+      eye.position.set(
+        x,
+        1.9,
+        -0.29
+      );
+
       this.monster.add(eye);
     }
 
-    // Legs
-    for (const x of [-0.17, 0.17]) {
-      const leg = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.09, 0.12, 0.65, 6),
-        skin
-      );
+    // EYE LIGHT
+    const eyeLight = new THREE.PointLight(
+      0xff0000,
+      0.7,
+      2.5
+    );
 
-      leg.position.set(x, 0.35, 0);
-      this.monster.add(leg);
-    }
+    eyeLight.position.set(
+      0,
+      1.9,
+      -0.35
+    );
 
+    this.monster.add(eyeLight);
+
+    // LONG ARMS
+    this.monsterLeftArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.075,
+        0.09,
+        0.9,
+        6
+      ),
+      skin
+    );
+
+    this.monsterLeftArm.position.set(
+      -0.38,
+      0.95,
+      -0.02
+    );
+
+    this.monsterLeftArm.rotation.z = -0.18;
+
+    this.monster.add(
+      this.monsterLeftArm
+    );
+
+    this.monsterRightArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.075,
+        0.09,
+        0.9,
+        6
+      ),
+      skin
+    );
+
+    this.monsterRightArm.position.set(
+      0.38,
+      0.95,
+      -0.02
+    );
+
+    this.monsterRightArm.rotation.z = 0.18;
+
+    this.monster.add(
+      this.monsterRightArm
+    );
+
+    // LEGS
+    this.monsterLeftLeg = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.09,
+        0.12,
+        0.7,
+        6
+      ),
+      skin
+    );
+
+    this.monsterLeftLeg.position.set(
+      -0.17,
+      0.35,
+      0
+    );
+
+    this.monster.add(
+      this.monsterLeftLeg
+    );
+
+    this.monsterRightLeg = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        0.09,
+        0.12,
+        0.7,
+        6
+      ),
+      skin
+    );
+
+    this.monsterRightLeg.position.set(
+      0.17,
+      0.35,
+      0
+    );
+
+    this.monster.add(
+      this.monsterRightLeg
+    );
+
+    // INITIAL POSITION
     this.monster.position.copy(
       this.monsterWaypoints[0]
     );
 
+    this.monsterPreviousPosition.copy(
+      this.monster.position
+    );
+
     this.monster.visible = false;
+
     this.scene.add(this.monster);
   }
 
-  // ==========================================
+  // =====================================================
   // MONSTER VISION
-  // ==========================================
+  // =====================================================
 
   private canMonsterSeePlayer(): boolean {
-    this.monsterToPlayer
-      .subVectors(this.playerPos, this.monster.position);
+    this.monsterToPlayer.subVectors(
+      this.playerPos,
+      this.monster.position
+    );
 
-    const distance = this.monsterToPlayer.length();
+    const distance =
+      this.monsterToPlayer.length();
 
-    if (distance > this.monsterDetectionRange || distance < 0.01) {
+    if (
+      distance > this.monsterDetectionRange ||
+      distance < 0.01
+    ) {
       return false;
     }
 
-    // The monster faces -Z when its rotation is zero.
     this.monsterForward
       .set(0, 0, -1)
       .applyAxisAngle(
@@ -366,50 +609,77 @@ export class HospitalGame {
       )
       .normalize();
 
-    const direction = this.monsterToPlayer
-      .clone()
-      .normalize();
+    const direction =
+      this.monsterToPlayer.clone().normalize();
 
-    // Peripheral vision
-    if (this.monsterForward.dot(direction) < 0.2) {
+    // FIELD OF VIEW
+    if (
+      this.monsterForward.dot(direction) < 0.05
+    ) {
       return false;
     }
 
-    // Check line of sight against hospital map geometry
-    const origin = this.monster.position.clone();
+    // LINE OF SIGHT
+    const origin =
+      this.monster.position.clone();
+
     origin.y = 1.65;
 
     const target = this.playerPos.clone();
+
     target.y = 1.4;
 
-    const rayDirection = target.sub(origin).normalize();
+    const rayDirection = target
+      .sub(origin)
+      .normalize();
 
-    this.monsterRaycaster.set(origin, rayDirection);
-    this.monsterRaycaster.far = distance;
-
-    const hits = this.monsterRaycaster.intersectObject(
-      this.mapData.rootGroup,
-      true
+    this.monsterRaycaster.set(
+      origin,
+      rayDirection
     );
 
-    // A wall/furniture mesh between monster and player blocks vision.
-    if (hits.length > 0 && hits[0].distance < distance - 0.45) {
+    this.monsterRaycaster.far = distance;
+
+    const hits =
+      this.monsterRaycaster.intersectObject(
+        this.mapData.rootGroup,
+        true
+      );
+
+    if (
+      hits.length > 0 &&
+      hits[0].distance < distance - 0.45
+    ) {
       return false;
     }
 
     return true;
   }
 
-  // ==========================================
-  // MONSTER COLLISION AND MOVEMENT
-  // ==========================================
+  // =====================================================
+  // MONSTER COLLISION
+  // =====================================================
 
-  private monsterHitsWall(x: number, z: number): boolean {
-    this.monsterCollisionSphere.center.set(x, 1, z);
+  private monsterHitsWall(
+    x: number,
+    z: number
+  ): boolean {
+    this.monsterCollisionSphere.center.set(
+      x,
+      1,
+      z
+    );
+
     this.monsterCollisionSphere.radius = 0.4;
 
-    for (const box of this.mapData.colliderBoxes) {
-      if (box.intersectsSphere(this.monsterCollisionSphere)) {
+    for (
+      const box of this.mapData.colliderBoxes
+    ) {
+      if (
+        box.intersectsSphere(
+          this.monsterCollisionSphere
+        )
+      ) {
         return true;
       }
     }
@@ -417,77 +687,324 @@ export class HospitalGame {
     return false;
   }
 
+  // =====================================================
+  // MONSTER MOVEMENT
+  // =====================================================
+
   private moveMonsterToward(
     target: THREE.Vector3,
     speed: number,
     dt: number
   ) {
-    const dx = target.x - this.monster.position.x;
-    const dz = target.z - this.monster.position.z;
+    const dx =
+      target.x - this.monster.position.x;
 
-    const distance = Math.sqrt(dx * dx + dz * dz);
+    const dz =
+      target.z - this.monster.position.z;
 
-    if (distance < 0.12) return;
+    const distance = Math.sqrt(
+      dx * dx + dz * dz
+    );
 
-    const step = Math.min(speed * dt, distance);
+    if (distance < 0.12) {
+      this.monsterIsMoving = false;
+      return;
+    }
+
+    this.monsterIsMoving = true;
+
+    const step = Math.min(
+      speed * dt,
+      distance
+    );
 
     const nx = dx / distance;
     const nz = dz / distance;
 
-    // Face the direction of movement.
-    this.monster.rotation.y = Math.atan2(-nx, -nz);
+    // FACE TARGET
+    this.monster.rotation.y =
+      Math.atan2(-nx, -nz);
 
-    const nextX = this.monster.position.x + nx * step;
-    const nextZ = this.monster.position.z + nz * step;
+    const nextX =
+      this.monster.position.x + nx * step;
 
-    // Slide along walls instead of getting stuck immediately.
-    if (!this.monsterHitsWall(nextX, nextZ)) {
+    const nextZ =
+      this.monster.position.z + nz * step;
+
+    // DIRECT MOVEMENT
+    if (
+      !this.monsterHitsWall(
+        nextX,
+        nextZ
+      )
+    ) {
       this.monster.position.x = nextX;
       this.monster.position.z = nextZ;
-    } else {
-      if (!this.monsterHitsWall(nextX, this.monster.position.z)) {
-        this.monster.position.x = nextX;
-      }
+      return;
+    }
 
-      if (!this.monsterHitsWall(this.monster.position.x, nextZ)) {
-        this.monster.position.z = nextZ;
+    // WALL SLIDING
+    let moved = false;
+
+    if (
+      !this.monsterHitsWall(
+        nextX,
+        this.monster.position.z
+      )
+    ) {
+      this.monster.position.x = nextX;
+      moved = true;
+    }
+
+    if (
+      !this.monsterHitsWall(
+        this.monster.position.x,
+        nextZ
+      )
+    ) {
+      this.monster.position.z = nextZ;
+      moved = true;
+    }
+
+    // If blocked, it will try another route next frame.
+    if (!moved) {
+      this.monsterIsMoving = false;
+    }
+  }
+
+  // =====================================================
+  // MONSTER ANIMATION
+  // =====================================================
+
+  private updateMonsterAnimation(
+    dt: number
+  ) {
+    this.monsterAnimationTime += dt;
+
+    const time =
+      this.monsterAnimationTime;
+
+    const chasing =
+      this.monsterState === 'chase';
+
+    const speed = chasing ? 13 : 6;
+
+    const amplitude = chasing ? 0.55 : 0.25;
+
+    // BODY SWAY
+    this.monsterBody.rotation.z =
+      Math.sin(time * speed) *
+      amplitude *
+      0.16;
+
+    // BREATHING / BODY EXPANSION
+    const breathing =
+      Math.sin(time * 2.4) * 0.035;
+
+    this.monsterBody.scale.set(
+      1 + breathing,
+      1 + Math.abs(breathing),
+      1 + breathing
+    );
+
+    // HEAD MOVEMENT
+    this.monsterHead.rotation.x =
+      Math.sin(time * 2.1) * 0.08;
+
+    this.monsterHead.rotation.z =
+      Math.sin(time * 1.6) *
+      (chasing ? 0.22 : 0.1);
+
+    // ARMS SWING WHILE MOVING
+    if (this.monsterIsMoving) {
+      this.monsterLeftArm.rotation.x =
+        Math.sin(time * speed) *
+        amplitude;
+
+      this.monsterRightArm.rotation.x =
+        -Math.sin(time * speed) *
+        amplitude;
+
+      this.monsterLeftLeg.rotation.x =
+        -Math.sin(time * speed) *
+        amplitude *
+        0.8;
+
+      this.monsterRightLeg.rotation.x =
+        Math.sin(time * speed) *
+        amplitude *
+        0.8;
+    } else {
+      // IDLE ANIMATION
+      this.monsterLeftArm.rotation.x =
+        Math.sin(time * 1.4) * 0.05;
+
+      this.monsterRightArm.rotation.x =
+        -Math.sin(time * 1.3) * 0.05;
+
+      this.monsterLeftLeg.rotation.x = 0;
+      this.monsterRightLeg.rotation.x = 0;
+    }
+
+    // CHASE LEAN
+    this.monsterBody.rotation.x =
+      chasing ? -0.12 : 0;
+
+    // SMALL STAGGERING MOVEMENT
+    if (this.monsterIsMoving) {
+      this.monster.position.y =
+        Math.abs(
+          Math.sin(time * speed)
+        ) * (chasing ? 0.06 : 0.025);
+    } else {
+      this.monster.position.y =
+        Math.sin(time * 1.7) * 0.025;
+    }
+  }
+
+  // =====================================================
+  // MONSTER AUDIO
+  // =====================================================
+
+  private updateMonsterAudio(
+    dt: number,
+    distance: number
+  ) {
+    this.monsterStepTimer += dt;
+    this.monsterBreathingTimer += dt;
+    this.monsterGrowlTimer += dt;
+
+    const chasing =
+      this.monsterState === 'chase';
+
+    // MONSTER FOOTSTEPS
+    if (this.monsterIsMoving) {
+      const stepInterval =
+        chasing ? 0.32 : 0.68;
+
+      if (
+        this.monsterStepTimer >= stepInterval
+      ) {
+        this.monsterStepTimer = 0;
+
+        if (distance < 18) {
+          horrorAudio.playMonsterFootstep();
+        }
+      }
+    }
+
+    // DISTANT BREATHING / CLOSE BREATHING
+    const breathingInterval =
+      distance < 5 ? 1.4 : 3.2;
+
+    if (
+      this.monsterBreathingTimer >=
+      breathingInterval
+    ) {
+      this.monsterBreathingTimer = 0;
+
+      if (distance < 18) {
+        horrorAudio.playMonsterBreathing();
+      }
+    }
+
+    // RANDOM GROWLS
+    const growlInterval =
+      chasing ? 4.5 : 8;
+
+    if (
+      this.monsterGrowlTimer >=
+        growlInterval &&
+      distance < 14
+    ) {
+      this.monsterGrowlTimer = 0;
+
+      if (Math.random() < 0.65) {
+        horrorAudio.playMonsterGrowl();
       }
     }
   }
 
-  // ==========================================
+  // =====================================================
   // MONSTER AI
-  // ==========================================
+  // =====================================================
 
   private updateMonster(dt: number) {
-    if (this.isGameOver || this.isVictory) return;
+    if (
+      this.isGameOver ||
+      this.isVictory ||
+      !this.isGameActive
+    ) {
+      return;
+    }
 
     this.monster.visible = true;
 
-    const distance = this.monster.position.distanceTo(
-      this.playerPos
-    );
+    const distance =
+      this.monster.position.distanceTo(
+        this.playerPos
+      );
 
-    // Hear sprinting from nearby corridors.
+    // HEAR RUNNING
     if (
       this.isSprinting &&
       distance < this.monsterHearingRange &&
       this.monsterState !== 'chase'
     ) {
       this.monsterState = 'investigate';
+
       this.monsterInvestigateTimer = 4;
 
-      this.monsterInvestigateTarget.copy(this.playerPos);
+      this.monsterInvestigateTarget.copy(
+        this.playerPos
+      );
     }
 
-    // Seeing the player starts a chase.
-    if (this.canMonsterSeePlayer()) {
+    // SEE PLAYER
+    const seesPlayer =
+      this.canMonsterSeePlayer();
+
+    if (seesPlayer) {
       this.monsterState = 'chase';
     }
 
-    if (this.monsterState === 'patrol') {
+    // STATE CHANGED
+    if (
+      this.monsterState !==
+      this.previousMonsterState
+    ) {
+      if (
+        this.monsterState === 'chase'
+      ) {
+        horrorAudio.playChaseStart();
+
+        this.panicLevel = 0.9;
+
+        horrorAudio.setPanicLevel(
+          this.panicLevel
+        );
+      }
+
+      if (
+        this.previousMonsterState ===
+          'chase' &&
+        this.monsterState !== 'chase'
+      ) {
+        horrorAudio.stopChase();
+      }
+
+      this.previousMonsterState =
+        this.monsterState;
+    }
+
+    // PATROL
+    if (
+      this.monsterState === 'patrol'
+    ) {
       const waypoint =
-        this.monsterWaypoints[this.monsterWaypointIndex];
+        this.monsterWaypoints[
+          this.monsterWaypointIndex
+        ];
 
       this.moveMonsterToward(
         waypoint,
@@ -496,26 +1013,42 @@ export class HospitalGame {
       );
 
       if (
-        this.monster.position.distanceTo(waypoint) < 0.45
+        this.monster.position.distanceTo(
+          waypoint
+        ) < 0.45
       ) {
         this.monsterWaypointIndex =
           (this.monsterWaypointIndex + 1) %
           this.monsterWaypoints.length;
       }
-    } else if (this.monsterState === 'investigate') {
+    }
+
+    // INVESTIGATE
+    else if (
+      this.monsterState === 'investigate'
+    ) {
       this.monsterInvestigateTimer -= dt;
 
       this.moveMonsterToward(
         this.monsterInvestigateTarget,
-        this.monsterMoveSpeed * 1.3,
+        this.monsterMoveSpeed * 1.35,
         dt
       );
 
-      if (this.monsterInvestigateTimer <= 0) {
+      if (
+        this.monsterInvestigateTimer <= 0
+      ) {
         this.monsterState = 'patrol';
       }
-    } else if (this.monsterState === 'chase') {
-      this.monsterTargetPosition.copy(this.playerPos);
+    }
+
+    // CHASE
+    else if (
+      this.monsterState === 'chase'
+    ) {
+      this.monsterTargetPosition.copy(
+        this.playerPos
+      );
 
       this.moveMonsterToward(
         this.monsterTargetPosition,
@@ -524,40 +1057,81 @@ export class HospitalGame {
       );
     }
 
-    // Catch distance
-    const newDistance = this.monster.position.distanceTo(
-      this.playerPos
+    // ANIMATION
+    this.updateMonsterAnimation(dt);
+
+    // AUDIO
+    const currentDistance =
+      this.monster.position.distanceTo(
+        this.playerPos
+      );
+
+    this.updateMonsterAudio(
+      dt,
+      currentDistance
     );
 
-    if (newDistance < 1.15) {
+    // PANIC INCREASES WHEN MONSTER GETS CLOSER
+    if (
+      this.monsterState === 'chase'
+    ) {
+      const danger = THREE.MathUtils.clamp(
+        1 - currentDistance / 13,
+        0.2,
+        1
+      );
+
+      this.panicLevel = Math.max(
+        this.panicLevel,
+        danger
+      );
+
+      horrorAudio.setPanicLevel(
+        this.panicLevel
+      );
+    }
+
+    // CAUGHT
+    if (currentDistance < 1.15) {
       this.isGameOver = true;
       this.isGameActive = false;
 
       this.keys = {};
+
       this.joystickVec.x = 0;
       this.joystickVec.y = 0;
 
-      horrorAudio.playStinger();
+      horrorAudio.stopChase();
+      horrorAudio.playGameOver();
 
       this.callbacks.onGameOver();
     }
   }
 
-  // ==========================================
+  // =====================================================
   // GAME CONTROL
-  // ==========================================
+  // =====================================================
 
   public startGame() {
-    if (this.isVictory || this.isGameOver) {
+    if (
+      this.isVictory ||
+      this.isGameOver
+    ) {
       this.restartGame();
       return;
     }
 
     this.isGameActive = true;
+
     this.monster.visible = true;
 
     horrorAudio.init();
     horrorAudio.resume();
+
+    horrorAudio.setPanicLevel(
+      this.panicLevel
+    );
+
     horrorAudio.playStinger();
   }
 
@@ -569,10 +1143,14 @@ export class HospitalGame {
     this.isGameActive = true;
 
     this.batteryLevel = 100;
+
     this.isFlashlightOn = true;
     this.isSprinting = false;
 
-    this.playerPos.copy(this.mapData.startPosition);
+    this.playerPos.copy(
+      this.mapData.startPosition
+    );
+
     this.playerVel.set(0, 0, 0);
 
     this.cameraPitch = 0;
@@ -582,66 +1160,111 @@ export class HospitalGame {
     this.lastStepCycle = 0;
 
     this.keys = {};
+
     this.joystickVec.x = 0;
     this.joystickVec.y = 0;
 
-    this.camera.position.copy(this.playerPos);
+    this.camera.position.copy(
+      this.playerPos
+    );
 
-    if (this.flashlight) {
-      this.flashlight.intensity = 4.5;
-    }
+    this.flashlight.intensity = 4.5;
 
-    this.mapData.collectibles.forEach((collectible) => {
-      collectible.visible = true;
-    });
+    this.mapData.collectibles.forEach(
+      (collectible) => {
+        collectible.visible = true;
+      }
+    );
 
     this.monsterState = 'patrol';
+
+    this.previousMonsterState = 'patrol';
+
     this.monsterWaypointIndex = 0;
+
     this.monsterInvestigateTimer = 0;
 
     this.monster.position.copy(
       this.monsterWaypoints[0]
     );
 
+    this.monsterPreviousPosition.copy(
+      this.monster.position
+    );
+
+    this.monsterAnimationTime = 0;
+    this.monsterStepTimer = 0;
+    this.monsterBreathingTimer = 0;
+    this.monsterGrowlTimer = 0;
+
     this.monster.visible = true;
 
+    this.monsterIsMoving = false;
+
+    this.panicLevel = 0.2;
+    this.sanityLevel = 100;
+
     this.lastInteractPrompt = null;
+
     this.currentInteractable = null;
 
     this.callbacks.onBatteryChange(100);
+
     this.callbacks.onSanityChange(100);
+
     this.callbacks.onInteractPrompt(null);
 
     horrorAudio.init();
     horrorAudio.resume();
+    horrorAudio.stopChase();
+
     horrorAudio.setPanicLevel(0.2);
+
     horrorAudio.playStinger();
   }
 
-  public setJoystickInput(x: number, y: number) {
+  // =====================================================
+  // MOBILE CONTROLS
+  // =====================================================
+
+  public setJoystickInput(
+    x: number,
+    y: number
+  ) {
     this.joystickVec.x = x;
     this.joystickVec.y = y;
   }
 
-  public addTouchLook(deltaX: number, deltaY: number) {
-    const lookSens = 0.0032;
+  public addTouchLook(
+    deltaX: number,
+    deltaY: number
+  ) {
+    const sensitivity = 0.0032;
 
-    this.cameraYaw -= deltaX * lookSens;
-    this.cameraPitch -= deltaY * lookSens;
+    this.cameraYaw -=
+      deltaX * sensitivity;
+
+    this.cameraPitch -=
+      deltaY * sensitivity;
 
     this.cameraPitch = Math.max(
       -Math.PI / 2.3,
-      Math.min(Math.PI / 2.3, this.cameraPitch)
+      Math.min(
+        Math.PI / 2.3,
+        this.cameraPitch
+      )
     );
   }
 
-  public setSprint(sprinting: boolean) {
+  public setSprint(
+    sprinting: boolean
+  ) {
     this.isSprinting = sprinting;
   }
 
-  // ==========================================
+  // =====================================================
   // INTERACTIONS
-  // ==========================================
+  // =====================================================
 
   public interact() {
     if (
@@ -652,36 +1275,57 @@ export class HospitalGame {
       return;
     }
 
-    if (!this.currentInteractable) return;
+    if (!this.currentInteractable) {
+      return;
+    }
 
-    const collectible = this.currentInteractable.userData;
+    const data =
+      this.currentInteractable.userData;
 
-    if (collectible?.isCollectible) {
-      this.collectedRecords.add(collectible.id);
+    // COLLECT RECORD
+    if (data?.isCollectible) {
+      if (
+        this.collectedRecords.has(data.id)
+      ) {
+        return;
+      }
+
+      this.collectedRecords.add(data.id);
+
       this.currentInteractable.visible = false;
 
       horrorAudio.playPickup();
 
       this.callbacks.onCollectRecord(
-        collectible.id,
-        collectible.name,
+        data.id,
+        data.name,
         this.collectedRecords.size,
         this.totalRecords
       );
 
-      horrorAudio.playStinger();
+      this.panicLevel = Math.min(
+        1,
+        0.2 +
+          this.collectedRecords.size * 0.18
+      );
 
       horrorAudio.setPanicLevel(
-        this.collectedRecords.size * 0.25
+        this.panicLevel
       );
 
       return;
     }
 
-    if (this.currentInteractable.userData.isExitDoor) {
-      if (this.collectedRecords.size >= this.totalRecords) {
+    // EXIT DOOR
+    if (data?.isExitDoor) {
+      if (
+        this.collectedRecords.size >=
+        this.totalRecords
+      ) {
         this.isVictory = true;
         this.isGameActive = false;
+
+        horrorAudio.stopChase();
 
         horrorAudio.playDoorCreak();
         horrorAudio.playPickup();
@@ -693,145 +1337,229 @@ export class HospitalGame {
     }
   }
 
-  // ==========================================
-  // INPUT EVENTS
-  // ==========================================
+  // =====================================================
+  // EVENT LISTENERS
+  // =====================================================
 
   private setupEventListeners() {
-    window.addEventListener('keydown', (event) => {
-      this.keys[event.code] = true;
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        this.keys[event.code] = true;
 
-      if (event.code === 'KeyF') {
-        this.toggleFlashlight();
+        if (event.code === 'KeyF') {
+          this.toggleFlashlight();
+        }
+
+        if (event.code === 'KeyE') {
+          this.interact();
+        }
+
+        if (
+          event.code === 'ShiftLeft' ||
+          event.code === 'ShiftRight'
+        ) {
+          this.isSprinting = true;
+        }
       }
+    );
 
-      if (event.code === 'KeyE') {
-        this.interact();
+    window.addEventListener(
+      'keyup',
+      (event) => {
+        this.keys[event.code] = false;
+
+        if (
+          event.code === 'ShiftLeft' ||
+          event.code === 'ShiftRight'
+        ) {
+          this.isSprinting = false;
+        }
       }
+    );
 
-      if (
-        event.code === 'ShiftLeft' ||
-        event.code === 'ShiftRight'
-      ) {
-        this.isSprinting = true;
+    this.renderer.domElement.addEventListener(
+      'click',
+      () => {
+        if (
+          this.isGameActive &&
+          !this.isPointerLocked &&
+          !('ontouchstart' in window)
+        ) {
+          this.renderer.domElement
+            .requestPointerLock?.();
+        }
       }
-    });
+    );
 
-    window.addEventListener('keyup', (event) => {
-      this.keys[event.code] = false;
-
-      if (
-        event.code === 'ShiftLeft' ||
-        event.code === 'ShiftRight'
-      ) {
-        this.isSprinting = false;
+    document.addEventListener(
+      'pointerlockchange',
+      () => {
+        this.isPointerLocked =
+          document.pointerLockElement ===
+          this.renderer.domElement;
       }
-    });
+    );
 
-    this.renderer.domElement.addEventListener('click', () => {
-      if (
-        this.isGameActive &&
-        !this.isPointerLocked &&
-        !('ontouchstart' in window)
-      ) {
-        this.renderer.domElement.requestPointerLock?.();
+    document.addEventListener(
+      'mousemove',
+      (event) => {
+        if (
+          this.isPointerLocked &&
+          this.isGameActive
+        ) {
+          const sensitivity = 0.0022;
+
+          this.cameraYaw -=
+            event.movementX * sensitivity;
+
+          this.cameraPitch -=
+            event.movementY * sensitivity;
+
+          this.cameraPitch = Math.max(
+            -Math.PI / 2.3,
+            Math.min(
+              Math.PI / 2.3,
+              this.cameraPitch
+            )
+          );
+        }
       }
-    });
+    );
 
-    document.addEventListener('pointerlockchange', () => {
-      this.isPointerLocked =
-        document.pointerLockElement ===
-        this.renderer.domElement;
-    });
-
-    document.addEventListener('mousemove', (event) => {
-      if (this.isPointerLocked && this.isGameActive) {
-        const mouseSens = 0.0022;
-
-        this.cameraYaw -= event.movementX * mouseSens;
-        this.cameraPitch -= event.movementY * mouseSens;
-
-        this.cameraPitch = Math.max(
-          -Math.PI / 2.3,
-          Math.min(Math.PI / 2.3, this.cameraPitch)
-        );
-      }
-    });
-
-    window.addEventListener('resize', this.onWindowResize);
+    window.addEventListener(
+      'resize',
+      this.onWindowResize
+    );
   }
 
   private onWindowResize = () => {
-    if (!this.container || !this.renderer || !this.camera) {
+    if (
+      !this.container ||
+      !this.renderer ||
+      !this.camera
+    ) {
       return;
     }
 
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
+    const width =
+      this.container.clientWidth;
 
-    if (width <= 0 || height <= 0) return;
+    const height =
+      this.container.clientHeight;
 
-    this.camera.aspect = width / height;
+    if (
+      width <= 0 ||
+      height <= 0
+    ) {
+      return;
+    }
+
+    this.camera.aspect =
+      width / height;
+
     this.camera.updateProjectionMatrix();
 
-    this.renderer.setSize(width, height);
+    this.renderer.setSize(
+      width,
+      height
+    );
   };
 
-  // ==========================================
+  // =====================================================
   // MAIN LOOP
-  // ==========================================
+  // =====================================================
 
   private tick = () => {
-    this.animFrameId = requestAnimationFrame(this.tick);
+    this.animFrameId =
+      requestAnimationFrame(this.tick);
 
-    const rawDt = this.clock.getDelta();
-    const dt = Math.min(rawDt, 0.05);
+    const rawDt =
+      this.clock.getDelta();
 
-    if (this.isGameActive && !this.isVictory && !this.isGameOver) {
+    const dt = Math.min(
+      rawDt,
+      0.05
+    );
+
+    if (
+      this.isGameActive &&
+      !this.isVictory &&
+      !this.isGameOver
+    ) {
       this.updatePlayerMovement(dt);
+
       this.updateMonster(dt);
+
       this.updateFlashlight(dt);
+
       this.updateFlickeringLights(dt);
+
       this.updateRaycasting();
+
       this.updateSanityAndBattery(dt);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(
+      this.scene,
+      this.camera
+    );
   };
 
-  // ==========================================
+  // =====================================================
   // PLAYER MOVEMENT
-  // ==========================================
+  // =====================================================
 
-  private updatePlayerMovement(dt: number) {
+  private updatePlayerMovement(
+    dt: number
+  ) {
     let moveForward = 0;
     let moveRight = 0;
 
-    if (this.keys['KeyW'] || this.keys['ArrowUp']) {
+    if (
+      this.keys['KeyW'] ||
+      this.keys['ArrowUp']
+    ) {
       moveForward += 1;
     }
 
-    if (this.keys['KeyS'] || this.keys['ArrowDown']) {
+    if (
+      this.keys['KeyS'] ||
+      this.keys['ArrowDown']
+    ) {
       moveForward -= 1;
     }
 
-    if (this.keys['KeyD'] || this.keys['ArrowRight']) {
+    if (
+      this.keys['KeyD'] ||
+      this.keys['ArrowRight']
+    ) {
       moveRight += 1;
     }
 
-    if (this.keys['KeyA'] || this.keys['ArrowLeft']) {
+    if (
+      this.keys['KeyA'] ||
+      this.keys['ArrowLeft']
+    ) {
       moveRight -= 1;
     }
 
-    if (Math.abs(this.joystickVec.y) > 0.1) {
-      moveForward -= this.joystickVec.y;
+    if (
+      Math.abs(this.joystickVec.y) > 0.1
+    ) {
+      moveForward -=
+        this.joystickVec.y;
     }
 
-    if (Math.abs(this.joystickVec.x) > 0.1) {
-      moveRight += this.joystickVec.x;
+    if (
+      Math.abs(this.joystickVec.x) > 0.1
+    ) {
+      moveRight +=
+        this.joystickVec.x;
     }
 
-    const baseSpeed = this.isSprinting ? 4.8 : 2.8;
+    const baseSpeed =
+      this.isSprinting ? 4.8 : 2.8;
 
     this._forward
       .set(
@@ -861,48 +1589,75 @@ export class HospitalGame {
       moveRight
     );
 
-    const isMoving = this._moveDir.lengthSq() > 0.01;
+    const isMoving =
+      this._moveDir.lengthSq() > 0.01;
 
     if (isMoving) {
       this._moveDir.normalize();
     }
 
-    const targetVelX = this._moveDir.x * baseSpeed;
-    const targetVelZ = this._moveDir.z * baseSpeed;
+    const targetVelX =
+      this._moveDir.x * baseSpeed;
 
-    this.playerVel.x = THREE.MathUtils.damp(
-      this.playerVel.x,
-      targetVelX,
-      12,
-      dt
-    );
+    const targetVelZ =
+      this._moveDir.z * baseSpeed;
 
-    this.playerVel.z = THREE.MathUtils.damp(
-      this.playerVel.z,
-      targetVelZ,
-      12,
-      dt
-    );
+    this.playerVel.x =
+      THREE.MathUtils.damp(
+        this.playerVel.x,
+        targetVelX,
+        12,
+        dt
+      );
 
-    const deltaX = this.playerVel.x * dt;
-    const deltaZ = this.playerVel.z * dt;
+    this.playerVel.z =
+      THREE.MathUtils.damp(
+        this.playerVel.z,
+        targetVelZ,
+        12,
+        dt
+      );
 
-    const proposedX = this.playerPos.x + deltaX;
+    const deltaX =
+      this.playerVel.x * dt;
 
-    if (!this.checkWallCollision(proposedX, this.playerPos.z)) {
+    const deltaZ =
+      this.playerVel.z * dt;
+
+    const proposedX =
+      this.playerPos.x + deltaX;
+
+    if (
+      !this.checkWallCollision(
+        proposedX,
+        this.playerPos.z
+      )
+    ) {
       this.playerPos.x = proposedX;
     }
 
-    const proposedZ = this.playerPos.z + deltaZ;
+    const proposedZ =
+      this.playerPos.z + deltaZ;
 
-    if (!this.checkWallCollision(this.playerPos.x, proposedZ)) {
+    if (
+      !this.checkWallCollision(
+        this.playerPos.x,
+        proposedZ
+      )
+    ) {
       this.playerPos.z = proposedZ;
     }
 
-    if (isMoving && this.playerVel.length() > 0.5) {
-      const bobFreq = this.isSprinting ? 14 : 9.5;
+    // WALKING CAMERA BOB
+    if (
+      isMoving &&
+      this.playerVel.length() > 0.5
+    ) {
+      const bobFrequency =
+        this.isSprinting ? 14 : 9.5;
 
-      this.bobTimer += dt * bobFreq;
+      this.bobTimer +=
+        dt * bobFrequency;
 
       const bobY =
         Math.sin(this.bobTimer) *
@@ -918,38 +1673,62 @@ export class HospitalGame {
         this.playerPos.z
       );
 
-      const currentCycle = Math.floor(
-        this.bobTimer / Math.PI
-      );
+      const currentCycle =
+        Math.floor(
+          this.bobTimer / Math.PI
+        );
 
-      if (currentCycle > this.lastStepCycle) {
-        this.lastStepCycle = currentCycle;
-        horrorAudio.playFootstep(this.isSprinting);
+      if (
+        currentCycle > this.lastStepCycle
+      ) {
+        this.lastStepCycle =
+          currentCycle;
+
+        horrorAudio.playFootstep(
+          this.isSprinting
+        );
       }
     } else {
       this.bobTimer += dt * 1.8;
 
       this.camera.position.set(
         this.playerPos.x,
-        1.6 + Math.sin(this.bobTimer) * 0.008,
+        1.6 +
+          Math.sin(this.bobTimer) * 0.008,
         this.playerPos.z
       );
     }
 
     this.camera.rotation.order = 'YXZ';
-    this.camera.rotation.y = this.cameraYaw;
-    this.camera.rotation.x = this.cameraPitch;
+
+    this.camera.rotation.y =
+      this.cameraYaw;
+
+    this.camera.rotation.x =
+      this.cameraPitch;
   }
 
   private checkWallCollision(
     x: number,
     z: number
   ): boolean {
-    this._playerSphere.center.set(x, 1, z);
-    this._playerSphere.radius = this.playerRadius;
+    this._playerSphere.center.set(
+      x,
+      1,
+      z
+    );
 
-    for (const box of this.mapData.colliderBoxes) {
-      if (box.intersectsSphere(this._playerSphere)) {
+    this._playerSphere.radius =
+      this.playerRadius;
+
+    for (
+      const box of this.mapData.colliderBoxes
+    ) {
+      if (
+        box.intersectsSphere(
+          this._playerSphere
+        )
+      ) {
         return true;
       }
     }
@@ -957,67 +1736,93 @@ export class HospitalGame {
     return false;
   }
 
-  // ==========================================
+  // =====================================================
   // FLICKERING LIGHTS
-  // ==========================================
+  // =====================================================
 
-  private updateFlickeringLights(dt: number) {
-    const time = this.clock.getElapsedTime();
+  private updateFlickeringLights(
+    dt: number
+  ) {
+    const time =
+      this.clock.getElapsedTime();
 
-    this.mapData.flickeringLights.forEach((lightData) => {
-      if (!lightData.isDefective) return;
-
-      const noise =
-        Math.sin(
-          time * lightData.flickerSpeed +
-          lightData.timeOffset
-        ) +
-        Math.cos(time * 33 + lightData.timeOffset * 2);
-
-      const isOff =
-        noise > 1.25 || Math.random() < 0.03;
-
-      const material =
-        lightData.glowMesh.material as THREE.MeshStandardMaterial;
-
-      if (isOff) {
-        lightData.light.intensity = 0.1;
-        material.emissiveIntensity = 0.15;
-
-        if (Math.random() < 0.05) {
-          const lightPosition = new THREE.Vector3();
-
-          lightData.light.getWorldPosition(lightPosition);
-
-          if (
-            this.playerPos.distanceTo(lightPosition) < 10
-          ) {
-            horrorAudio.playLightSpark();
-          }
+    this.mapData.flickeringLights.forEach(
+      (lightData) => {
+        if (!lightData.isDefective) {
+          return;
         }
-      } else {
-        lightData.light.intensity =
-          lightData.baseIntensity *
-          (0.8 + Math.random() * 0.4);
 
-        material.emissiveIntensity = 1.6;
+        const noise =
+          Math.sin(
+            time * lightData.flickerSpeed +
+              lightData.timeOffset
+          ) +
+          Math.cos(
+            time * 33 +
+              lightData.timeOffset * 2
+          );
+
+        const isOff =
+          noise > 1.25 ||
+          Math.random() < 0.03;
+
+        const material =
+          lightData.glowMesh
+            .material as THREE.MeshStandardMaterial;
+
+        if (isOff) {
+          lightData.light.intensity = 0.1;
+
+          material.emissiveIntensity = 0.15;
+
+          if (Math.random() < 0.05) {
+            const lightPosition =
+              new THREE.Vector3();
+
+            lightData.light.getWorldPosition(
+              lightPosition
+            );
+
+            if (
+              this.playerPos.distanceTo(
+                lightPosition
+              ) < 10
+            ) {
+              horrorAudio.playLightSpark();
+            }
+          }
+        } else {
+          lightData.light.intensity =
+            lightData.baseIntensity *
+            (0.8 + Math.random() * 0.4);
+
+          material.emissiveIntensity = 1.6;
+        }
       }
-    });
+    );
 
-    this.mapData.collectibles.forEach((collectible) => {
-      if (!collectible.visible) return;
+    // RECORD HALO ANIMATION
+    this.mapData.collectibles.forEach(
+      (collectible) => {
+        if (!collectible.visible) {
+          return;
+        }
 
-      const halo = collectible.getObjectByName('halo');
+        const halo =
+          collectible.getObjectByName(
+            'halo'
+          );
 
-      if (halo) {
-        halo.rotation.z += dt * 1.5;
+        if (halo) {
+          halo.rotation.z += dt * 1.5;
+        }
       }
-    });
+    );
   }
 
-  // ==========================================
+  // =====================================================
   // INTERACTION RAYCASTING
-  // ==========================================
+  // =====================================================
 
   private updateRaycasting() {
     this.raycaster.setFromCamera(
@@ -1027,30 +1832,41 @@ export class HospitalGame {
 
     const interactables: THREE.Object3D[] = [];
 
-    this.mapData.collectibles.forEach((collectible) => {
-      if (collectible.visible) {
-        interactables.push(collectible);
+    this.mapData.collectibles.forEach(
+      (collectible) => {
+        if (collectible.visible) {
+          interactables.push(collectible);
+        }
       }
-    });
-
-    if (this.mapData.exitDoor) {
-      this.mapData.exitDoor.userData.isExitDoor = true;
-      interactables.push(this.mapData.exitDoor);
-    }
-
-    const intersects = this.raycaster.intersectObjects(
-      interactables,
-      true
     );
 
-    let foundInteractable: THREE.Object3D | null = null;
+    if (this.mapData.exitDoor) {
+      this.mapData.exitDoor.userData.isExitDoor =
+        true;
+
+      interactables.push(
+        this.mapData.exitDoor
+      );
+    }
+
+    const intersects =
+      this.raycaster.intersectObjects(
+        interactables,
+        true
+      );
+
+    let foundInteractable:
+      THREE.Object3D | null = null;
+
     let prompt: string | null = null;
 
     if (intersects.length > 0) {
       const hit = intersects[0];
 
       if (hit.distance < 3.2) {
-        let object: THREE.Object3D | null = hit.object;
+        let object:
+          THREE.Object3D | null =
+          hit.object;
 
         while (
           object &&
@@ -1061,16 +1877,21 @@ export class HospitalGame {
           object = object.parent;
         }
 
-        if (object?.userData?.isCollectible) {
+        if (
+          object?.userData?.isCollectible
+        ) {
           foundInteractable = object;
 
           prompt =
             `Tap / Press E to Collect: ${object.userData.name}`;
-        } else if (object?.userData?.isExitDoor) {
+        } else if (
+          object?.userData?.isExitDoor
+        ) {
           foundInteractable = object;
 
           const remaining =
-            this.totalRecords - this.collectedRecords.size;
+            this.totalRecords -
+            this.collectedRecords.size;
 
           prompt =
             remaining > 0
@@ -1080,20 +1901,32 @@ export class HospitalGame {
       }
     }
 
-    this.currentInteractable = foundInteractable;
+    this.currentInteractable =
+      foundInteractable;
 
-    if (prompt !== this.lastInteractPrompt) {
+    if (
+      prompt !== this.lastInteractPrompt
+    ) {
       this.lastInteractPrompt = prompt;
-      this.callbacks.onInteractPrompt(prompt);
+
+      this.callbacks.onInteractPrompt(
+        prompt
+      );
     }
   }
 
-  // ==========================================
+  // =====================================================
   // BATTERY AND SANITY
-  // ==========================================
+  // =====================================================
 
-  private updateSanityAndBattery(dt: number) {
-    if (this.isFlashlightOn && this.batteryLevel > 0) {
+  private updateSanityAndBattery(
+    dt: number
+  ) {
+    // BATTERY DRAIN
+    if (
+      this.isFlashlightOn &&
+      this.batteryLevel > 0
+    ) {
       this.batteryLevel = Math.max(
         0,
         this.batteryLevel - dt * 0.25
@@ -1105,36 +1938,73 @@ export class HospitalGame {
 
       if (this.batteryLevel <= 0) {
         this.flashlight.intensity = 0;
+
+        this.isFlashlightOn = false;
+
         horrorAudio.playLightSpark();
       }
     }
 
-    const exitPosition = new THREE.Vector3(0, 1.6, -22);
+    // SANITY BASED ON MONSTER DISTANCE
+    const monsterDistance =
+      this.monster.position.distanceTo(
+        this.playerPos
+      );
 
-    const distanceToExit = this.playerPos.distanceTo(
-      exitPosition
-    );
+    let danger = 0;
 
-    const tension = THREE.MathUtils.clamp(
-      1 - distanceToExit / 35,
-      0.15,
-      0.95
-    );
+    if (this.monster.visible) {
+      danger = THREE.MathUtils.clamp(
+        1 - monsterDistance / 14,
+        0,
+        1
+      );
+    }
 
-    horrorAudio.setPanicLevel(tension);
+    const targetSanity =
+      100 - danger * 65;
+
+    this.sanityLevel =
+      THREE.MathUtils.damp(
+        this.sanityLevel,
+        targetSanity,
+        1.8,
+        dt
+      );
 
     this.callbacks.onSanityChange(
-      Math.round((1 - tension * 0.5) * 100)
+      Math.round(this.sanityLevel)
+    );
+
+    // PANIC
+    const targetPanic = Math.max(
+      0.2,
+      danger
+    );
+
+    this.panicLevel =
+      THREE.MathUtils.damp(
+        this.panicLevel,
+        targetPanic,
+        1.2,
+        dt
+      );
+
+    horrorAudio.setPanicLevel(
+      this.panicLevel
     );
   }
 
-  // ==========================================
+  // =====================================================
   // CLEANUP
-  // ==========================================
+  // =====================================================
 
   public dispose() {
     if (this.animFrameId !== null) {
-      cancelAnimationFrame(this.animFrameId);
+      cancelAnimationFrame(
+        this.animFrameId
+      );
+
       this.animFrameId = null;
     }
 
@@ -1143,11 +2013,20 @@ export class HospitalGame {
       this.onWindowResize
     );
 
+    horrorAudio.stopChase();
+
     horrorAudio.dispose();
+
     this.renderer.dispose();
 
-    if (this.container.contains(this.renderer.domElement)) {
-      this.container.removeChild(this.renderer.domElement);
+    if (
+      this.container.contains(
+        this.renderer.domElement
+      )
+    ) {
+      this.container.removeChild(
+        this.renderer.domElement
+      );
     }
   }
 }
